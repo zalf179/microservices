@@ -1,2 +1,3 @@
-pika  # Library buat RabbitMQ
-psycopg2  # Library buat PostgreSQL
+pika
+psycopg2-binary
+pymongo

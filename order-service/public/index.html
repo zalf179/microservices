@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microservices Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 40px; background: #eceff1; color: #333; }
+        .container { max-width: 700px; margin: auto; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 25px; }
+        h2 { margin-top: 0; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        label { display: block; margin-top: 10px; font-weight: bold; font-size: 14px; }
+        input { display: block; width: 100%; margin: 8px 0 15px 0; padding: 12px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; }
+        button { background: #27ae60; color: white; border: none; padding: 15px; cursor: pointer; border-radius: 6px; width: 100%; font-size: 16px; font-weight: bold; transition: 0.3s; }
+        button:hover { background: #219150; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: white; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; color: #666; }
+        .status-badge { padding: 5px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; text-transform: uppercase; background: #dfe6e9; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="card">
+        <h2>� Create New Order</h2>
+        <label>Customer Name</label>
+        <input type="text" id="custName" placeholder="Contoh: Rizal">
+        
+        <label>Item Name</label>
+        <input type="text" id="itemName" placeholder="Contoh: Kopi Susu">
+        
+        <label>Amount (Price)</label>
+        <input type="number" id="itemAmount" placeholder="Contoh: 500">
+        
+        <button onclick="sendOrder()">KIRIM KE MICROSERVICES</button>
+    </div>
+
+    <div class="card">
+        <h2>� Order List (Live from MongoDB)</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Customer</th>
+                    <th>Item</th>
+                    <th>Price</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="orderList">
+                </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    async function sendOrder() {
+        // Ambil data dari input HTML
+        const customerName = document.getElementById('custName').value;
+        const item = document.getElementById('itemName').value;
+        const amount = document.getElementById('itemAmount').value;
+
+        // Validasi simpel di frontend
+        if (!customerName || !item || !amount) {
+            alert("Isi semua kolom dulu, bos!");
+            return;
+        }
+
+        const payload = {
+            customerName: customerName,
+            item: item,
+            amount: parseInt(amount) // Paksa jadi angka
+        };
+
+        console.log("Mengirim data:", payload);
+
+        try {
+            const response = await fetch('/api/orders', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (response.status === 400) {
+                const errData = await response.json();
+                alert("Error 400: " + errData.error);
+            } else {
+                // Bersihkan form
+                document.getElementById('custName').value = '';
+                document.getElementById('itemName').value = '';
+                document.getElementById('itemAmount').value = '';
+                loadOrders(); // Refresh tabel
+            }
+        } catch (error) {
+            console.error("Fetch error:", error);
+            alert("Gagal konek ke server!");
+        }
+    }
+
+    async function loadOrders() {
+        try {
+            const res = await fetch('/api/orders');
+            const orders = await res.json();
+            const list = document.getElementById('orderList');
+            list.innerHTML = '';
+            
+            orders.forEach(o => {
+                list.innerHTML += `
+                    <tr>
+                        <td><b>${o.customerName}</b></td>
+                        <td>${o.item}</td>
+                        <td>$${o.amount}</td>
+                        <td><span class="status-badge">${o.status}</span></td>
+                    </tr>
+                `;
+            });
+        } catch (e) { console.log("Gagal load tabel"); }
+    }
+
+    // Jalankan load pertama kali
+    loadOrders();
+    // Auto refresh tiap 3 detik
+    setInterval(loadOrders, 3000);
+</script>
+
+</body>
+</html>

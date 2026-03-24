@@ -57,3 +57,5 @@ spec:
               value: "amqp://guest:guest@rabbitmq:5672/"
             - name: POSTGRES_URI
               value: "dbname=payments user=postgres password=password host=postgres"
+            - name: MONGO_URI   # <--- Tambahin ini
+              value: "mongodb://mongodb:27017/"

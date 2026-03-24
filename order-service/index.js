@@ -1,72 +1,75 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const amqp = require('amqplib');
+const path = require('path');
 
 const app = express();
-app.use(express.json());
+app.use(express.json()); // PENTING: Biar bisa baca JSON dari frontend
+app.use(express.static(path.join(__dirname, 'public')));
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/orders';
-const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://mongodb:27017/orders';
+const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://rabbitmq:5672';
 const QUEUE_NAME = 'order_queue';
 
-// MongoDB Setup
+// --- KONEKSI ---
 mongoose.connect(MONGO_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
+    .then(() => console.log('✅ Connected to MongoDB'))
+    .catch(e => console.error('❌ MongoDB Error', e));
 
 const Order = mongoose.model('Order', {
-  customerName: String,
-  item: String,
-  amount: Number,
-  status: { type: String, default: 'PENDING' }
+    customerName: String,
+    item: String,
+    amount: Number,
+    status: { type: String, default: 'PENDING' }
 });
 
-// RabbitMQ Setup
 let channel;
 async function connectRabbitMQ() {
-  try {
-    const connection = await amqp.connect(RABBITMQ_URL);
-    channel = await connection.createChannel();
-    await channel.assertQueue(QUEUE_NAME, { durable: true });
-    console.log('Connected to RabbitMQ');
-  } catch (error) {
-    console.error('RabbitMQ connection error, retrying in 5s...', error);
-    setTimeout(connectRabbitMQ, 5000); // Retry logic penting buat microservices
-  }
+    try {
+        const connection = await amqp.connect(RABBITMQ_URL);
+        channel = await connection.createChannel();
+        await channel.assertQueue(QUEUE_NAME, { durable: true });
+        console.log('✅ Connected to RabbitMQ - Channel Ready');
+    } catch (e) {
+        console.log('❌ RabbitMQ Re-connecting...');
+        setTimeout(connectRabbitMQ, 5000);
+    }
 }
 connectRabbitMQ();
 
-// API Endpoint
+// --- ROUTES ---
+
 app.post('/api/orders', async (req, res) => {
-  const { customerName, item, amount } = req.body;
+    // DEBUG: Liat data yang masuk di terminal
+    console.log("� Request masuk ke /api/orders:", req.body);
 
-  try {
-    // 1. Simpan ke MongoDB
-    const order = new Order({ customerName, item, amount });
-    const savedOrder = await order.save();
-    console.log(`Order saved in DB: ${savedOrder._id}`);
+    const { customerName, item, amount } = req.body;
 
-    // 2. Kirim ke RabbitMQ
-    if (channel) {
-      const payload = {
-        orderId: savedOrder._id,
-        amount: savedOrder.amount,
-        customerName: savedOrder.customerName
-      };
-      channel.sendToQueue(QUEUE_NAME, Buffer.from(JSON.stringify(payload)), { persistent: true });
-      console.log(`Order sent to queue: ${savedOrder._id}`);
+    // VALIDASI (Penyebab Error 400)
+    if (!customerName || !item || !amount) {
+        console.log("⚠️ Validasi gagal! Ada field yang kosong.");
+        return res.status(400).json({ error: "Data gak lengkap, bos!" });
     }
 
-    res.status(201).json(savedOrder);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+    try {
+        const newOrder = new Order({ customerName, item, amount });
+        const savedOrder = await newOrder.save();
+
+        if (channel) {
+            const msg = { orderId: savedOrder._id, amount, customerName };
+            channel.sendToQueue(QUEUE_NAME, Buffer.from(JSON.stringify(msg)), { persistent: true });
+            console.log("� Berhasil kirim pesan ke RabbitMQ");
+        }
+
+        res.status(201).json(savedOrder);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.get('/api/orders', async (req, res) => {
-    const orders = await Order.find();
+    const orders = await Order.find().sort({ _id: -1 });
     res.json(orders);
 });
 
-const PORT = 3000;
-app.listen(PORT, () => console.log(`Order Service running on port ${PORT}`));
+app.listen(3000, () => console.log('� Order Service on port 3000'));
